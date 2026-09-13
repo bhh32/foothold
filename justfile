@@ -4,7 +4,7 @@ prefix := env_var_or_default("PREFIX", env_var("HOME") / ".local")
 bindir := prefix / "bin"
 plugindir := prefix / "share" / "foothold" / "plugins"
 
-qmldir := if prefix == "/usr" { "/etc/xdg/quickshell/foothold" } else { env_var("HOME") / ".config/quickshell/foothold" }
+qmldir := if prefix == "/usr" { "/usr/share/xdg/quickshell/foothold" } else { env_var("HOME") / ".config/quickshell/foothold" }
 
 _default:
     @just --list
