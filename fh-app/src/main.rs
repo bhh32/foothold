@@ -1,7 +1,7 @@
 use color_eyre::Result;
 use fh_ipc::{Error as IpcError, PluginResponse, Request, Response, decode_line, encode_line};
 use fh_manifest::stamp;
-use fh_plugins::{DesktopEntries, Files, Help, Settings, Topic, Web};
+use fh_plugins::{DesktopEntries, Files, Help, Topic};
 use fh_service::{Plugin, Registry, UsageCache};
 use std::{
     io::{BufRead, Write, stderr, stdin, stdout},
@@ -24,20 +24,13 @@ fn main() -> Result<()> {
     // stream is corrupted for the frontend
     tracing_subscriber::fmt().with_writer(stderr).init();
 
-    let settings = Settings::load();
     let usage = UsageCache::default();
-    let web = Web::new(settings.web);
     let files = Files::default();
     let desktop = DesktopEntries::load();
-    let topics = vec![Topic::of(&web), Topic::of(&files), Topic::of(&desktop)];
+    let topics = vec![Topic::of(&files), Topic::of(&desktop)];
     let help = Help::new(topics, Arc::clone(&usage));
 
-    let plugins: Vec<Box<dyn Plugin>> = vec![
-        Box::new(web),
-        Box::new(help),
-        Box::new(files),
-        Box::new(desktop),
-    ];
+    let plugins: Vec<Box<dyn Plugin>> = vec![Box::new(help), Box::new(files), Box::new(desktop)];
 
     let (events, incoming) = channel();
     let (wake, wakes) = channel();

@@ -188,7 +188,6 @@ dependencies = [
 name = "fh-plugins"
 version = "0.1.0"
 dependencies = [
- "fh-config",
  "fh-ipc",
  "fh-manifest",
  "fh-paths",

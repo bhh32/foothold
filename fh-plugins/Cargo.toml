@@ -6,7 +6,6 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-fh-config.workspace = true
 fh-ipc.workspace = true
 fh-manifest.workspace = true
 fh-paths.workspace = true
