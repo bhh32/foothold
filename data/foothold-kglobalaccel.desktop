@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Foothold
+Comment=Open the Foothold launcher
+Exec=qs -c foothold ipc call launcher toggle
+Icon=system-search
+NoDisplay=true
+StartupNotify=false
+OnlyShowIn=KDE;
+X-KDE-Shortcuts=Meta+Space

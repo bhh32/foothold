@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Foothold
+Comment=Foothold launcher shell
+Exec=qs -c foothold
+Icon=system-search
+NoDisplay=true
+StartupNotify=false
+OnlyShowIn=KDE;
