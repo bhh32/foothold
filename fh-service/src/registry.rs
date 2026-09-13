@@ -1,10 +1,13 @@
 use std::{
     path::PathBuf,
-    sync::mpsc::{Receiver, Sender, channel},
+    sync::{
+        Arc,
+        mpsc::{Receiver, Sender, channel},
+    },
     time::{Duration, Instant},
 };
 
-use crate::{process::ProcessPlugin, trigger::Trigger};
+use crate::{UsageCache, process::ProcessPlugin, trigger::Trigger};
 
 use super::Plugin;
 use fh_ipc::{Indice, PluginResponse, PluginSearchResult, Request, SearchResult};
@@ -31,11 +34,12 @@ pub struct Registry {
     responses: Receiver<(usize, PluginResponse)>,
     sender: Sender<(usize, PluginResponse)>,
     wake: Sender<()>,
+    usage: UsageCache,
     selections: Vec<Selection>,
 }
 
 impl Registry {
-    pub fn new(builtin: Vec<Box<dyn Plugin>>, wake: Sender<()>) -> Self {
+    pub fn new(builtin: Vec<Box<dyn Plugin>>, wake: Sender<()>, usage: UsageCache) -> Self {
         let (sender, responses) = channel();
 
         Self {
@@ -44,6 +48,7 @@ impl Registry {
             responses,
             sender,
             wake,
+            usage,
             selections: Vec::new(),
         }
     }
@@ -64,6 +69,7 @@ impl Registry {
             trigger,
             self.sender.clone(),
             self.wake.clone(),
+            Arc::clone(&self.usage),
         ));
     }
 
@@ -99,6 +105,7 @@ impl Registry {
         }
 
         let mut collected: Vec<(Selection, SearchResult)> = Vec::new();
+        let mut cleared: Option<usize> = None;
         let builtins: Vec<usize> = match isolating_builtin {
             Some(only) => vec![only],
             None if isolating => Vec::new(),
@@ -131,13 +138,21 @@ impl Registry {
             }
 
             match self.responses.recv_timeout(remaining) {
-                Ok((index, PluginResponse::Append(result))) => collected.push((
-                    Selection {
-                        source: Source::Process(index),
-                        local: result.id,
-                    },
-                    Self::into_result(result),
-                )),
+                Ok((index, PluginResponse::Append(result))) => {
+                    if cleared.is_none_or(|owner| owner == index) {
+                        collected.push((
+                            Selection {
+                                source: Source::Process(index),
+                                local: result.id,
+                            },
+                            Self::into_result(result),
+                        ));
+                    }
+                }
+                Ok((index, PluginResponse::Clear)) => {
+                    collected.clear();
+                    cleared = Some(index);
+                }
                 Ok((_, PluginResponse::Finished)) => pending -= 1,
                 Ok(_) => {}
                 Err(_) => break,
@@ -146,7 +161,7 @@ impl Registry {
 
         // Window-first ordering before the cap
         collected.sort_by_key(|(_, result)| result.window.is_none());
-        if !isolating {
+        if !isolating && cleared.is_none() {
             collected.truncate(MAX_RESULTS);
         }
         self.selections = collected.iter().map(|(sel, _)| *sel).collect();
@@ -232,6 +247,8 @@ impl Registry {
 #[cfg(test)]
 mod tests {
 
+    use crate::UsageCache;
+
     use super::{super::Plugin, Registry};
     use fh_ipc::{Indice, PluginResponse, PluginSearchResult};
     use std::sync::mpsc::channel;
@@ -290,6 +307,7 @@ mod tests {
                 }),
             ],
             wake,
+            UsageCache::default(),
         )
     }
 

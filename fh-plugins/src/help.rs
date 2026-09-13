@@ -1,6 +1,5 @@
 use fh_ipc::{IconSource, Indice, PluginResponse, PluginSearchResult};
-use fh_manifest::discover;
-use fh_service::{Plugin, Usage};
+use fh_service::{Plugin, Usage, UsageCache};
 
 #[derive(Clone)]
 pub struct Topic {
@@ -23,18 +22,24 @@ impl Topic {
 
 pub struct Help {
     builtin: Vec<Topic>,
-    discover: fn() -> Vec<Topic>,
+    usage: UsageCache,
+    discover: fn(&UsageCache) -> Vec<Topic>,
     outcome: Vec<String>,
 }
 
 impl Help {
-    pub fn new(builtin: Vec<Topic>) -> Self {
-        Self::with(builtin, manifest_topics)
+    pub fn new(builtin: Vec<Topic>, usage: UsageCache) -> Self {
+        Self::with(builtin, usage, manifest_topics)
     }
 
-    fn with(builtin: Vec<Topic>, discover: fn() -> Vec<Topic>) -> Self {
+    fn with(
+        builtin: Vec<Topic>,
+        usage: UsageCache,
+        discover: fn(&UsageCache) -> Vec<Topic>,
+    ) -> Self {
         Self {
             builtin,
+            usage,
             discover,
             outcome: Vec::new(),
         }
@@ -51,7 +56,7 @@ impl Help {
         }];
 
         topics.extend(self.builtin.iter().cloned());
-        topics.extend((self.discover)());
+        topics.extend((self.discover)(&self.usage));
         topics
     }
 
@@ -162,10 +167,18 @@ impl Plugin for Help {
     }
 }
 
-fn manifest_topics() -> Vec<Topic> {
-    discover()
+fn manifest_topics(usage: &UsageCache) -> Vec<Topic> {
+    let cache = usage.lock().ok();
+
+    fh_manifest::discover()
         .into_iter()
-        .map(|manifest| Topic::new(manifest.name, manifest.usage))
+        .map(|manifest| {
+            let entries = cache
+                .as_ref()
+                .and_then(|cache| cache.get(&manifest.name).cloned())
+                .unwrap_or(manifest.usage);
+            Topic::new(manifest.name, entries)
+        })
         .collect()
 }
 
@@ -173,7 +186,7 @@ fn manifest_topics() -> Vec<Topic> {
 mod tests {
     use super::{Help, Topic};
     use fh_ipc::PluginResponse;
-    use fh_service::{Plugin, Usage};
+    use fh_service::{Plugin, Usage, UsageCache};
 
     fn topic(plugin: &str, prefix: &str) -> Topic {
         Topic {
@@ -187,7 +200,11 @@ mod tests {
     }
 
     fn help() -> Help {
-        Help::with(vec![topic("web", "g"), topic("terminal", "t")], Vec::new)
+        Help::with(
+            vec![topic("web", "g"), topic("terminal", "t")],
+            UsageCache::default(),
+            |_| Vec::new(),
+        )
     }
 
     #[test]

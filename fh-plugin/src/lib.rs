@@ -1,7 +1,8 @@
 mod spawn;
 
 use fh_ipc::{
-    ContextOption, Indice, PluginResponse, PluginSearchResult, Request, decode_line, encode_line,
+    ContextOption, Indice, PluginResponse, PluginSearchResult, Request, Usage, decode_line,
+    encode_line,
 };
 use fh_paths::config_dir;
 use serde::de::DeserializeOwned;
@@ -10,7 +11,7 @@ use std::{
     io::{self, BufRead, Write},
     path::PathBuf,
     sync::mpsc::{Sender, channel},
-    thread,
+    thread::{self, JoinHandle},
 };
 use tracing::warn;
 
@@ -48,6 +49,12 @@ pub trait Source {
                 <Self::Settings>::default()
             }
         }
+    }
+    fn usage(&mut self) -> Vec<Usage> {
+        Vec::new()
+    }
+    fn isolates(&mut self, _query: &str) -> bool {
+        false
     }
     fn connect(&mut self, _waker: Waker) {}
     fn search(&mut self, query: &str) -> Vec<PluginSearchResult>;
@@ -95,6 +102,12 @@ pub fn serve<S: Source, R: BufRead, W: Write + Send + 'static>(
     });
 
     source.connect(Waker(out.clone()));
+
+    let usage = source.usage();
+    if !usage.is_empty() && out.send(PluginResponse::Usage(usage)).is_err() {
+        return finish(source, out, pump);
+    }
+
     for line in reader.lines() {
         let Ok(line) = line else {
             break;
@@ -103,11 +116,17 @@ pub fn serve<S: Source, R: BufRead, W: Write + Send + 'static>(
             continue;
         };
         let responses = match request {
-            Request::Search(query) => source
-                .search(&query)
-                .into_iter()
-                .map(PluginResponse::Append)
-                .collect(),
+            Request::Search(query) => {
+                let isolates = source.isolates(&query);
+                let found = source.search(&query);
+                let mut responses = Vec::with_capacity(found.len() + 1);
+
+                if isolates {
+                    responses.push(PluginResponse::Clear);
+                }
+                responses.extend(found.into_iter().map(PluginResponse::Append));
+                responses
+            }
             Request::Activate(id) => source.activate(id),
             Request::Complete(id) => source
                 .complete(id)
@@ -138,7 +157,11 @@ pub fn serve<S: Source, R: BufRead, W: Write + Send + 'static>(
         }
     }
 
-    // The pump ends whent he last Sender drops
+    finish(source, out, pump)
+}
+
+fn finish<S, W>(source: S, out: Sender<PluginResponse>, pump: JoinHandle<W>) -> W {
+    // The pump ends when the last Sender drops
     drop(source);
     drop(out);
 
@@ -155,7 +178,7 @@ fn emit<W: Write>(writer: &mut W, response: &PluginResponse) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{Source, serve};
-    use fh_ipc::{ContextOption, IconSource, Indice, PluginResponse, PluginSearchResult};
+    use fh_ipc::{ContextOption, IconSource, Indice, PluginResponse, PluginSearchResult, Usage};
     use serde::Deserialize;
     use std::io::Cursor;
 
@@ -211,6 +234,29 @@ mod tests {
 
         fn interrupt(&mut self) {
             self.interrupted = true;
+        }
+    }
+
+    struct Described;
+
+    impl Source for Described {
+        const NAME: &'static str = "described";
+        type Settings = ();
+
+        fn usage(&mut self) -> Vec<Usage> {
+            vec![Usage {
+                prefix: "d".to_owned(),
+                example: "d thing".to_owned(),
+                description: "does a thing".to_owned(),
+            }]
+        }
+
+        fn search(&mut self, _query: &str) -> Vec<PluginSearchResult> {
+            Vec::new()
+        }
+
+        fn activate(&mut self, _id: Indice) -> Vec<PluginResponse> {
+            Vec::new()
         }
     }
 
@@ -293,5 +339,15 @@ mod tests {
             exchange("{\"Activate\":0}\n"),
             vec!["\"Close\"", "\"Finished\""]
         );
+    }
+
+    #[test]
+    fn source_usage_pushes_before_anything_else() {
+        // Help needs it without asking, and before any search happens
+        let output = serve(Described, Cursor::new(String::new()), Vec::new());
+        let line = String::from_utf8(output).expect("output is utf8");
+
+        assert!(line.starts_with("{\"Usage\":["));
+        assert!(line.contains("\"prefix\":\"d\""));
     }
 }

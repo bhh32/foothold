@@ -1,10 +1,10 @@
-use crate::Trigger;
+use crate::{Trigger, UsageCache};
 use fh_ipc::{PluginResponse, Request, decode_line, encode_line};
 use std::{
     io::{BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, ChildStdin, Command, Stdio},
-    sync::mpsc::Sender,
+    sync::{Arc, mpsc::Sender},
     thread,
 };
 use tracing::warn;
@@ -16,6 +16,7 @@ pub struct ProcessPlugin {
     trigger: Trigger,
     sender: Sender<(usize, PluginResponse)>,
     wake: Sender<()>,
+    usage: UsageCache,
     child: Option<Child>,
     stdin: Option<ChildStdin>,
 }
@@ -28,6 +29,7 @@ impl ProcessPlugin {
         trigger: Trigger,
         sender: Sender<(usize, PluginResponse)>,
         wake: Sender<()>,
+        usage: UsageCache,
     ) -> Self {
         Self {
             index,
@@ -36,6 +38,7 @@ impl ProcessPlugin {
             trigger,
             sender,
             wake,
+            usage,
             child: None,
             stdin: None,
         }
@@ -110,6 +113,8 @@ impl ProcessPlugin {
         };
         let sender = self.sender.clone();
         let wake = self.wake.clone();
+        let usage = Arc::clone(&self.usage);
+        let name = self.name.clone();
         let index = self.index;
 
         thread::spawn(move || {
@@ -120,14 +125,22 @@ impl ProcessPlugin {
                 let Ok(response) = decode_line::<PluginResponse>(&line) else {
                     continue;
                 };
-                if response == PluginResponse::Refresh {
-                    if wake.send(()).is_err() {
-                        break;
+                match response {
+                    PluginResponse::Refresh => {
+                        if wake.send(()).is_err() {
+                            break;
+                        }
                     }
-                    continue;
-                }
-                if sender.send((index, response)).is_err() {
-                    break;
+                    PluginResponse::Usage(entries) => {
+                        if let Ok(mut usage) = usage.lock() {
+                            usage.insert(name.clone(), entries);
+                        }
+                    }
+                    response => {
+                        if sender.send((index, response)).is_err() {
+                            break;
+                        }
+                    }
                 }
             }
         });

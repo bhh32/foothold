@@ -3,6 +3,13 @@ use serde::{Deserialize, Serialize};
 pub type Indice = u32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Usage {
+    pub prefix: String,
+    pub example: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum IconSource {
     Name(String),
     Mime(String),

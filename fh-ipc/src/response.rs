@@ -1,4 +1,6 @@
-use crate::search::{ContextOption, GpuPreference, Indice, PluginSearchResult, SearchResult};
+use crate::search::{
+    ContextOption, GpuPreference, Indice, PluginSearchResult, SearchResult, Usage,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -31,6 +33,7 @@ pub enum PluginResponse {
         gpu_preference: GpuPreference,
     },
     Fill(String),
+    Usage(Vec<Usage>),
     Refresh,
     Finished,
 }

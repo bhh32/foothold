@@ -2,10 +2,10 @@ use color_eyre::Result;
 use fh_ipc::{Error as IpcError, PluginResponse, Request, Response, decode_line, encode_line};
 use fh_manifest::stamp;
 use fh_plugins::{DesktopEntries, Files, Help, Settings, Topic, Web};
-use fh_service::{Plugin, Registry};
+use fh_service::{Plugin, Registry, UsageCache};
 use std::{
     io::{BufRead, Write, stderr, stdin, stdout},
-    sync::mpsc::channel,
+    sync::{Arc, mpsc::channel},
     thread,
     time::SystemTime,
 };
@@ -25,12 +25,12 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt().with_writer(stderr).init();
 
     let settings = Settings::load();
-
+    let usage = UsageCache::default();
     let web = Web::new(settings.web);
     let files = Files::default();
     let desktop = DesktopEntries::load();
     let topics = vec![Topic::of(&web), Topic::of(&files), Topic::of(&desktop)];
-    let help = Help::new(topics);
+    let help = Help::new(topics, Arc::clone(&usage));
 
     let plugins: Vec<Box<dyn Plugin>> = vec![
         Box::new(web),
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
         }
     });
 
-    let mut registry = Registry::new(plugins, wake);
+    let mut registry = Registry::new(plugins, wake, usage);
     let mut cur_stamp = stamp().unwrap_or_else(SystemTime::now);
     register_plugins(&mut registry);
     let mut stdout = stdout().lock();

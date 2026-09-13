@@ -1,3 +1,4 @@
+pub use fh_ipc::Usage;
 use fh_ipc::{Indice, PluginResponse, PluginSearchResult};
 
 pub trait Plugin {
@@ -15,12 +16,4 @@ pub trait Plugin {
     fn usage(&self) -> Vec<Usage> {
         Vec::new()
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Usage {
-    // Empty for a plugin with no prefix
-    pub prefix: String,
-    pub example: String,
-    pub description: String,
 }

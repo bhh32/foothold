@@ -9,5 +9,5 @@ pub use error::Error;
 pub use request::Request;
 pub use response::{PluginResponse, Response};
 pub use search::{
-    ContextOption, GpuPreference, IconSource, Indice, PluginSearchResult, SearchResult,
+    ContextOption, GpuPreference, IconSource, Indice, PluginSearchResult, SearchResult, Usage,
 };
